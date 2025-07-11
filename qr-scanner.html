@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>QRスキャナー</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; margin: 0; padding: 0; }
+    video { width: 100%; max-height: 50vh; }
+    #result { margin-top: 20px; font-size: 1.2em; }
+    button { margin-top: 20px; padding: 10px 20px; font-size: 1em; }
+  </style>
+</head>
+<body>
+  <h1>QRコードスキャナー</h1>
+  <video id="video" autoplay></video>
+  <div id="result">QRコードを読み取ってください</div>
+  <button onclick="startCamera()">再スキャン</button>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script>
+    let video = document.getElementById('video');
+    let result = document.getElementById('result');
+    let scanning = false;
+
+    async function startCamera() {
+      result.textContent = "カメラ起動中...";
+      scanning = true;
+
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      video.srcObject = stream;
+
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+
+      function tick() {
+        if (!scanning) return;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, canvas.width, canvas.height);
+
+        if (code) {
+          scanning = false;
+          result.textContent = `読み取り成功：${code.data}`;
+          video.srcObject.getTracks().forEach(track => track.stop());
+
+          // URLへ即ジャンプ
+          if (code.data.startsWith("http")) {
+            window.location.href = code.data;
+          }
+        } else {
+          requestAnimationFrame(tick);
+        }
+      }
+
+      requestAnimationFrame(tick);
+    }
+
+    startCamera();
+  </script>
+</body>
+</html>
