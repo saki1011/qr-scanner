@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>QRscan</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f9f9f9;
+      text-align: center;
+    }
+    .header {
+      background-color: #2c3e50;
+      color: white;
+      padding: 20px;
+    }
+    .logo {
+      width: 50px;
+      vertical-align: middle;
+      margin-right: 10px;
+    }
+    .title {
+      font-size: 1.5em;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .form-section {
+      padding: 20px;
+    }
+    .radio-group {
+      margin-bottom: 10px;
+    }
+    input[type="tel"] {
+      padding: 8px;
+      font-size: 1em;
+      width: 200px;
+    }
+    #reader {
+      width: 100%;
+      max-width: 400px;
+      margin: 20px auto;
+    }
+    #result {
+      margin-top: 20px;
+      font-size: 1.2em;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <img src="https://img.icons8.com/ios-filled/50/ffffff/qr-code.png" class="logo" alt="QR">
+    <span class="title">QRscan</span>
+  </div>
+
+  <div class="form-section">
+    <label>仮払金：</label>
+    <div class="radio-group">
+      <label><input type="radio" name="karibarai" value="あり" onchange="toggleNumberField()"> あり</label>
+      <label><input type="radio" name="karibarai" value="なし" checked onchange="toggleNumberField()"> なし</label>
+    </div>
+
+    <div id="karibaraiNumberField" style="display: none;">
+      <label>仮払金管理番号：</label>
+      <input type="tel" id="karibaraiNumber" maxlength="10" placeholder="例：A123" inputmode="numeric">
+    </div>
+  </div>
+
+  <div id="reader"></div>
+  <div id="result">QRコードを読み取ってください</div>
+
+  <script>
+    const APP_ID = 171;
+    const API_TOKEN = 'rHyAOfz3AmM2Fzvi95w8noXBUIuwHGXyvTS2YtjJ';
+
+    function toggleNumberField() {
+      const value = document.querySelector('input[name="karibarai"]:checked').value;
+      document.getElementById('karibaraiNumberField').style.display = value === 'あり' ? 'block' : 'none';
+    }
+
+    toggleNumberField(); // 初期表示時に反映
+
+    async function saveToKintone(qrData, karibarai, karibaraiNumber) {
+      const body = {
+        app: APP_ID,
+        record: {
+          仮払金: { value: karibarai },
+          karibarai01: { value: karibaraiNumber },
+          qr_space: { value: qrData }
+        }
+      };
+
+      try {
+        const res = await fetch(`https://${location.host}/k/v1/record.json`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Cybozu-API-Token': API_TOKEN
+          },
+          body: JSON.stringify(body)
+        });
+
+        const result = await res.json();
+        if (!res.ok) {
+          console.error('保存失敗:', result);
+          alert('kintone保存失敗');
+        } else {
+          alert('kintone保存成功');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('ネットワークエラー');
+      }
+    }
+
+    const html5QrCode = new Html5Qrcode("reader");
+
+    Html5Qrcode.getCameras().then(devices => {
+      if (devices && devices.length) {
+        html5QrCode.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 }
+          },
+          async (decodedText, result) => {
+            document.getElementById('result').textContent = `読み取り成功: ${decodedText}`;
+            html5QrCode.stop();
+
+            const karibarai = document.querySelector('input[name="karibarai"]:checked').value;
+            const karibaraiNumber = document.getElementById('karibaraiNumber').value || '';
+
+            await saveToKintone(decodedText, karibarai, karibaraiNumber);
+
+            if (decodedText.startsWith("http")) {
+              window.location.href = decodedText;
+            }
+          },
+          errorMessage => {
+            document.getElementById('result').textContent = "読み取り中...";
+          }
+        );
+      } else {
+        alert("カメラが見つかりません");
+      }
+    }).catch(err => {
+      alert("カメラエラー: " + err);
+    });
+  </script>
+</body>
+</html>
