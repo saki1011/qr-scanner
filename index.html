@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>QRレコード登録</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 20px;
+      font-size: 1.2em;
+    }
+    label, input {
+      margin: 16px 0;
+      display: block;
+    }
+    video {
+      width: 100%;
+      max-height: 50vh;
+      margin-top: 16px;
+    }
+    #result {
+      margin-top: 20px;
+      color: green;
+    }
+    button {
+      margin-top: 20px;
+      padding: 12px 24px;
+      font-size: 1em;
+      border: none;
+      border-radius: 8px;
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    #karibaraiContainer {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <h2>QRスキャンでレコード更新</h2>
+
+  <label>仮払金：</label>
+  <label><input type="radio" name="karibaraiRadio" value="あり">あり</label>
+  <label><input type="radio" name="karibaraiRadio" value="なし" checked>なし</label>
+
+  <div id="karibaraiContainer">
+    <label>仮払金管理番号：</label>
+    <input type="text" id="karibarai01" maxlength="1" placeholder="例：A">
+  </div>
+
+  <button onclick="startCamera()">📷 QR読み取り開始</button>
+
+  <video id="video" autoplay></video>
+  <div id="result">QRコードを読み取ってください</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script>
+    const API_TOKEN = "rHyAOfz3AmM2Fzvi95w8noXBUIuwHGXyvTS2YtjJ";
+    const APP_ID = 171;
+    const DOMAIN = "k9s9s5hq7g8n.cybozu.com";
+
+    const video = document.getElementById("video");
+    const result = document.getElementById("result");
+    const karibaraiContainer = document.getElementById("karibaraiContainer");
+
+    let scanning = false;
+
+    // ラジオボタン切り替え処理
+    document.querySelectorAll("input[name='karibaraiRadio']").forEach(radio => {
+      radio.addEventListener("change", () => {
+        karibaraiContainer.style.display =
+          (radio.value === "あり" && radio.checked) ? "block" : "none";
+      });
+    });
+
+    async function startCamera() {
+      result.textContent = "カメラ起動中...";
+      scanning = true;
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" }
+      });
+      video.srcObject = stream;
+
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+
+      function tick() {
+        if (!scanning) return;
+
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, canvas.width, canvas.height);
+
+        if (code && code.data.includes("/show#record=")) {
+          scanning = false;
+          const recordId = code.data.split("record=")[1];
+          video.srcObject.getTracks().forEach(track => track.stop());
+          result.textContent = `レコード ${recordId} を更新中...`;
+          updateKintoneRecord(recordId);
+        } else {
+          requestAnimationFrame(tick);
+        }
+      }
+
+      requestAnimationFrame(tick);
+    }
+
+    async function updateKintoneRecord(recordId) {
+      const radioValue = document.querySelector("input[name='karibaraiRadio']:checked").value;
+      const textValue = document.getElementById("karibarai01").value;
+
+      const record = {
+        仮払金: { value: radioValue }
+      };
+
+      if (radioValue === "あり") {
+        record.karibarai01 = { value: textValue };
+      }
+
+      const body = {
+        app: APP_ID,
+        id: recordId,
+        record
+      };
+
+      try {
+        const response = await fetch(`https://${DOMAIN}/k/v1/record.json`, {
+          method: "PUT",
+          headers: {
+            "X-Cybozu-API-Token": API_TOKEN,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(body)
+        });
+
+        if (!response.ok) throw new Error(await response.text());
+
+        result.textContent = "✅ レコードを更新しました！";
+      } catch (err) {
+        console.error(err);
+        result.textContent = "❌ 更新に失敗しました：" + err.message;
+      }
+    }
+  </script>
+</body>
+</html>
