@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>QRコードスキャナー</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 20px;
+      font-size: 1.2em;
+    }
+    .form-section {
+      margin-bottom: 30px;
+    }
+    label {
+      display: block;
+      margin: 10px 0 5px;
+    }
+    input[type="text"] {
+      padding: 8px;
+      font-size: 1em;
+      width: 200px;
+    }
+    .radio-group {
+      margin: 10px 0;
+    }
+    video {
+      width: 100%;
+      max-height: 50vh;
+      margin-top: 16px;
+    }
+    #result {
+      margin-top: 20px;
+      font-size: 1.2em;
+      color: #333;
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 1em;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <h1>QRコードスキャナー</h1>
+
+  <!-- 🔽 入力フォーム部分 -->
+  <div class="form-section">
+    <label>仮払金：</label>
+    <div class="radio-group">
+      <label><input type="radio" name="karibarai" value="あり" onchange="toggleNumberField()"> あり</label>
+      <label><input type="radio" name="karibarai" value="なし" checked onchange="toggleNumberField()"> なし</label>
+    </div>
+
+    <div id="karibaraiNumberField" style="display: none;">
+      <label>仮払金管理番号：</label>
+      <input type="text" id="karibaraiNumber" maxlength="10" placeholder="例：A123">
+    </div>
+  </div>
+
+  <!-- 🔽 カメラ部分 -->
+  <video id="video" autoplay></video>
+  <div id="result">QRコードを読み取ってください</div>
+  <button onclick="startCamera()">再スキャン</button>
+
+  <!-- 🔽 スクリプト -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script>
+    const video = document.getElementById('video');
+    const result = document.getElementById('result');
+    let scanning = false;
+
+    // 仮払金選択で管理番号欄を出し分け
+    function toggleNumberField() {
+      const selected = document.querySelector('input[name="karibarai"]:checked').value;
+      document.getElementById('karibaraiNumberField').style.display = selected === 'あり' ? 'block' : 'none';
+    }
+
+    async function startCamera() {
+      result.textContent = "カメラ起動中...";
+      scanning = true;
+
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      video.srcObject = stream;
+
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+
+      function tick() {
+        if (!scanning) return;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, canvas.width, canvas.height);
+
+        if (code) {
+          scanning = false;
+          result.textContent = `読み取り成功：${code.data}`;
+          video.srcObject.getTracks().forEach(track => track.stop());
+
+          // URLに即ジャンプ
+          if (code.data.startsWith("http")) {
+            window.location.href = code.data;
+          }
+        } else {
+          requestAnimationFrame(tick);
+        }
+      }
+
+      requestAnimationFrame(tick);
+    }
+
+    // 起動時もチェック
+    toggleNumberField();
+    startCamera();
+  </script>
+</body>
+</html>
