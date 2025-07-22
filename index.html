@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>QRスキャナー with 入力フォーム</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 10px; }
+    video { width: 100%; max-height: 40vh; }
+    #resultList { margin-top: 20px; text-align: left; }
+    .record { padding: 5px; border: 1px solid #ccc; margin: 5px; cursor: pointer; }
+    .record:hover { background: #eee; }
+    .form-area { margin-top: 15px; padding: 10px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <h2>QRスキャナー</h2>
+  <div class="form-area">
+    <label>仮払金：
+      <select id="karibarai">
+        <option value="なし">なし</option>
+        <option value="あり">あり</option>
+      </select>
+    </label>
+    <br><br>
+    <label>管理番号：
+      <input id="karibarai01" type="number" pattern="\d*" inputmode="numeric" placeholder="数字を入力" />
+    </label>
+  </div>
+
+  <div id="reader" style="width: 100%;"></div>
+
+  <h3>読み取ったQRコード一覧</h3>
+  <div id="resultList"></div>
+
+  <script>
+    const DOMAIN = 'k9s9s5hq7g8n.cybozu.com';
+    const API_TOKEN = 'rHyAOfz3AmM2Fzvi95w8noXBUIuwHGXyvTS2YtjJ';
+    const APP_ID = 171;
+    const FIELD_KARIBARAI = '仮払金';
+    const FIELD_KARIBARAI_NO = 'karibarai01';
+
+    const scannedRecords = new Set();
+
+    function extractRecordId(url) {
+      const match = url.match(/record=(\d+)/);
+      return match ? match[1] : null;
+    }
+
+    function updateRecord(recordId) {
+      const karibaraiValue = document.getElementById('karibarai').value;
+      const karibarai01Value = document.getElementById('karibarai01').value;
+
+      const data = {
+        app: APP_ID,
+        id: recordId,
+        record: {
+          [FIELD_KARIBARAI]: { value: karibaraiValue }
+        }
+      };
+
+      if (karibaraiValue === 'あり') {
+        data.record[FIELD_KARIBARAI_NO] = { value: karibarai01Value };
+      }
+
+      fetch(`https://${DOMAIN}/k/v1/record.json`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Cybozu-API-Token': API_TOKEN
+        },
+        body: JSON.stringify(data)
+      })
+      .then(res => res.json())
+      .then(response => {
+        alert(`✅ レコード ${recordId} を更新しました`);
+        window.open(`https://${DOMAIN}/k/#/${APP_ID}/show?record=${recordId}`, '_blank');
+      })
+      .catch(err => {
+        alert('⚠️ 更新に失敗しました: ' + err);
+        console.error(err);
+      });
+    }
+
+    function addToList(url) {
+      if (scannedRecords.has(url)) return;
+      scannedRecords.add(url);
+
+      const recordId = extractRecordId(url);
+      if (!recordId) return;
+
+      const div = document.createElement('div');
+      div.className = 'record';
+      div.innerHTML = `📄 <strong>レコードID:</strong> ${recordId}`;
+      div.onclick = () => updateRecord(recordId);
+      document.getElementById('resultList').appendChild(div);
+    }
+
+    const html5QrCode = new Html5Qrcode("reader");
+    html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: 250 },
+      (decodedText) => {
+        addToList(decodedText);
+      },
+      (errorMessage) => { /* 無視OK */ }
+    ).catch(err => {
+      alert("カメラの起動に失敗しました: " + err);
+    });
+  </script>
+</body>
+</html>
