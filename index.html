@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>QRscan</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+      background-color: #f9f9f9;
+    }
+    .header {
+      background-color: #2c3e50;
+      color: white;
+      padding: 20px 0;
+      position: relative;
+    }
+    .logo {
+      width: 60px;
+      vertical-align: middle;
+      margin-right: 10px;
+    }
+    .title {
+      font-size: 1.5em;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    #reader {
+      width: 100%;
+      max-width: 500px;
+      margin: 20px auto;
+      position: relative;
+    }
+    #highlight {
+      position: absolute;
+      border: 2px solid red;
+      pointer-events: none;
+      display: none;
+      z-index: 10;
+    }
+    #results {
+      margin: 20px auto;
+      max-width: 500px;
+      text-align: left;
+    }
+    .qr-item {
+      display: block;
+      background: white;
+      padding: 10px 10px 10px 15px;
+      border-radius: 5px;
+      margin-bottom: 10px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+      color: #333;
+      text-decoration: none;
+      position: relative;
+      transition: background 0.2s;
+    }
+    .qr-item:hover {
+      background: #e0f7fa;
+    }
+    .delete-btn {
+      background: #e74c3c;
+      color: white;
+      border: none;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 0.9em;
+      border-radius: 4px;
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    #clearAll {
+      margin: 10px;
+      font-size: 1em;
+      padding: 6px 12px;
+    }
+
+    /* ポップアップ通知 */
+    #popup {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #00bcd4;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      display: none;
+      z-index: 100;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="https://img.icons8.com/ios-filled/50/ffffff/qr-code.png" alt="QR" class="logo">
+    <span class="title">QRscan</span>
+  </div>
+
+  <button id="clearAll">すべて削除</button>
+
+  <div id="reader">
+    <div id="highlight"></div>
+  </div>
+
+  <div id="results"></div>
+
+  <!-- ポップアップ通知 -->
+  <div id="popup"></div>
+
+  <script>
+    const results = new Map(); // Map<recordId, url>
+    const resultsContainer = document.getElementById('results');
+    const clearAllBtn = document.getElementById('clearAll');
+    const highlightBox = document.getElementById('highlight');
+    const popup = document.getElementById('popup');
+
+    function extractRecordId(url) {
+      const match = url.match(/record=(\d+)/);
+      return match ? match[1] : null;
+    }
+
+    function showPopup(text) {
+      popup.textContent = text;
+      popup.style.display = 'block';
+      setTimeout(() => {
+        popup.style.display = 'none';
+      }, 2000); // 2秒で消える
+    }
+
+    function displayResults() {
+      resultsContainer.innerHTML = '';
+      results.forEach((url, recordId) => {
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.className = 'qr-item';
+
+        const span = document.createElement('span');
+        span.textContent = `NO：${recordId}`;
+        link.appendChild(span);
+
+        const delBtn = document.createElement('button');
+        delBtn.textContent = '削除';
+        delBtn.className = 'delete-btn';
+        delBtn.onclick = (e) => {
+          e.preventDefault();
+          results.delete(recordId);
+          displayResults();
+        };
+
+        link.appendChild(delBtn);
+        resultsContainer.appendChild(link);
+      });
+    }
+
+    clearAllBtn.onclick = () => {
+      results.clear();
+      displayResults();
+    };
+
+    const html5QrCode = new Html5Qrcode("reader");
+
+    Html5Qrcode.getCameras().then(devices => {
+      if (devices && devices.length) {
+        html5QrCode.start(
+          { facingMode: "environment" },
+          {
+            fps: 15,
+            qrbox: { width: 180, height: 180 },
+            rememberLastUsedCamera: true,
+            showTorchButtonIfSupported: true,
+            experimentalFeatures: {
+              useBarCodeDetectorIfSupported: true
+            }
+          },
+          (decodedText, result) => {
+            const recordId = extractRecordId(decodedText);
+            if (recordId && !results.has(recordId)) {
+              results.set(recordId, decodedText);
+              displayResults();
+              window.open(decodedText, '_blank'); // スキャン後すぐ開く
+              showPopup(`NO：${recordId} をスキャンしました`); // ポップアップ表示
+            }
+
+            if (result?.boundingBox) {
+              const box = result.boundingBox;
+              const reader = document.getElementById('reader');
+              const scaleX = reader.clientWidth / result.frameWidth;
+              const scaleY = reader.clientHeight / result.frameHeight;
+              highlightBox.style.left = `${box.x * scaleX}px`;
+              highlightBox.style.top = `${box.y * scaleY}px`;
+              highlightBox.style.width = `${box.width * scaleX}px`;
+              highlightBox.style.height = `${box.height * scaleY}px`;
+              highlightBox.style.display = 'block';
+            }
+          },
+          errorMessage => {
+            highlightBox.style.display = 'none';
+          }
+        );
+      }
+    }).catch(err => {
+      alert("カメラが見つかりません：" + err);
+    });
+  </script>
+</body>
+</html>
