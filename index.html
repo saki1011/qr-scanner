@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>QRscan - 仮払金対応</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+<style>
+body { font-family:sans-serif; text-align:center; margin:0; padding:0; background:#f9f9f9; }
+.header { background:#2c3e50; color:white; padding:20px 0; }
+.logo { width:60px; vertical-align:middle; margin-right:10px; }
+.title { font-size:1.5em; display:inline-block; vertical-align:middle; }
+#reader { width:100%; max-width:500px; margin:20px auto; position:relative; }
+#highlight { position:absolute; border:2px solid red; pointer-events:none; display:none; z-index:10; }
+#results { margin:20px auto; max-width:500px; text-align:left; }
+.qr-item { display:block; background:white; padding:10px; border-radius:5px; margin-bottom:10px; box-shadow:0 0 5px rgba(0,0,0,0.1); color:#333; text-decoration:none; position:relative; }
+.delete-btn { background:#e74c3c; color:white; border:none; padding:4px 8px; cursor:pointer; font-size:0.9em; border-radius:4px; position:absolute; right:10px; top:50%; transform:translateY(-50%); }
+#clearAll { margin:10px; font-size:1em; padding:6px 12px; }
+#form-area { max-width:500px; margin:20px auto; text-align:left; }
+#form-area label { display:block; margin-bottom:10px; }
+#sendAllBtn { padding:6px 12px; font-size:1em; margin-top:10px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <img src="https://img.icons8.com/ios-filled/50/ffffff/qr-code.png" alt="QR" class="logo">
+  <span class="title">QRscan</span>
+</div>
+
+<button id="clearAll">すべて削除</button>
+
+<div id="reader"><div id="highlight"></div></div>
+
+<!-- 共通値フォーム -->
+<div id="form-area">
+  <label>
+    仮払金:
+    <select id="karibaraiSelect">
+      <option value="なし" selected>なし</option>
+      <option value="あり">あり</option>
+    </select>
+  </label>
+  <label>
+    仮払金管理番号:
+    <input type="number" id="karibaraiInput" placeholder="例: 1234">
+  </label>
+  <button id="sendAllBtn">スキャンしたレコードに反映</button>
+</div>
+
+<div id="results"></div>
+
+<script>
+const results = new Map(); // Map<recordId, url>
+const resultsContainer = document.getElementById('results');
+const clearAllBtn = document.getElementById('clearAll');
+const highlightBox = document.getElementById('highlight');
+
+function extractRecordId(url) {
+  const match = url.match(/record=(\d+)/);
+  return match ? match[1] : null;
+}
+
+function displayResults() {
+  resultsContainer.innerHTML = '';
+  results.forEach((url, recordId) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.className = 'qr-item';
+    link.textContent = `NO：${recordId}`;
+
+    const delBtn = document.createElement('button');
+    delBtn.textContent = '削除';
+    delBtn.className = 'delete-btn';
+    delBtn.onclick = (e) => {
+      e.preventDefault();
+      results.delete(recordId);
+      displayResults();
+    };
+
+    link.appendChild(delBtn);
+    resultsContainer.appendChild(link);
+  });
+}
+
+clearAllBtn.onclick = () => {
+  results.clear();
+  displayResults();
+};
+
+// QRスキャン
+const html5QrCode = new Html5Qrcode("reader");
+
+Html5Qrcode.getCameras().then(devices => {
+  if (devices && devices.length) {
+    html5QrCode.start(
+      { facingMode: "environment" },
+      { fps:15, qrbox:{width:180,height:180}, rememberLastUsedCamera:true, showTorchButtonIfSupported:true, experimentalFeatures:{useBarCodeDetectorIfSupported:true} },
+      (decodedText, result) => {
+        const recordId = extractRecordId(decodedText);
+        if(recordId && !results.has(recordId)) {
+          results.set(recordId, decodedText);
+          displayResults();
+        }
+
+        if(result?.boundingBox){
+          const box = result.boundingBox;
+          const reader = document.getElementById('reader');
+          const scaleX = reader.clientWidth / result.frameWidth;
+          const scaleY = reader.clientHeight / result.frameHeight;
+          highlightBox.style.left = `${box.x*scaleX}px`;
+          highlightBox.style.top = `${box.y*scaleY}px`;
+          highlightBox.style.width = `${box.width*scaleX}px`;
+          highlightBox.style.height = `${box.height*scaleY}px`;
+          highlightBox.style.display='block';
+        }
+      },
+      errorMessage => {
+        highlightBox.style.display='none';
+      }
+    );
+  }
+}).catch(err => {
+  alert("カメラが見つかりません：" + err);
+});
+
+// 一括反映
+document.getElementById("sendAllBtn").onclick = async () => {
+  const karibarai = document.getElementById("karibaraiSelect").value;
+  const karibaraiNum = document.getElementById("karibaraiInput").value;
+
+  if(karibarai==="あり" && !karibaraiNum){
+    alert("仮払金がありの場合、管理番号を入力してください");
+    return;
+  }
+
+  for(const [recordId,url] of results){
+    const payload = {
+      app: "{アプリID}",       // ここに対象アプリID
+      id: recordId,
+      record: {
+        仮払金: { value: karibarai }
+      }
+    };
+    if(karibarai==="あり"){
+      payload.record.karibarai01 = { value: karibaraiNum };
+    }
+
+    await fetch(`https://{サブドメイン}.cybozu.com/k/v1/record.json`, {
+      method:"PUT",
+      headers:{
+        "Content-Type":"application/json",
+        "X-Cybozu-API-Token":"{APIトークン}"
+      },
+      body: JSON.stringify(payload)
+    })
+    .then(res=>res.json())
+    .then(data=>console.log("更新完了",data))
+    .catch(err=>console.error(err));
+  }
+  alert("全レコードに反映しました！");
+};
+</script>
+</body>
+</html>
